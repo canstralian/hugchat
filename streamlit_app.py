@@ -4,6 +4,7 @@ from datasets import load_dataset
 from gtts import gTTS
 import os
 import re
+import random
 
 # Enable Dark Mode and Custom CSS
 st.markdown(
@@ -30,9 +31,19 @@ st.markdown(
 )
 
 # Load models and datasets
-mistral_model = AutoModelForCausalLM.from_pretrained("kye/lucidrains-python-3-8192-mistral-7b")
-mistral_tokenizer = AutoTokenizer.from_pretrained("kye/lucidrains-python-3-8192-mistral-7b")
-wordlist_dataset = load_dataset("Canstralian/Wordlists")
+try:
+    code_llama_model = AutoModelForCausalLM.from_pretrained("meta-llama/CodeLlama-7B-Python")
+    code_llama_tokenizer = AutoTokenizer.from_pretrained("meta-llama/CodeLlama-7B-Python")
+except Exception as e:
+    st.error(f"Error loading model: {e}")
+    code_llama_model = None
+    code_llama_tokenizer = None
+
+try:
+    wordlist_dataset = load_dataset("Canstralian/Wordlists")
+except Exception as e:
+    st.error(f"Error loading Wordlist dataset: {e}")
+    wordlist_dataset = None
 
 # Initialize chat history storage
 if "messages" not in st.session_state:
@@ -47,8 +58,8 @@ def validate_prompt(prompt: str) -> bool:
     Returns:
         bool: True if the prompt is valid, False otherwise.
     """
-    # Basic validation: Check if the prompt contains only alphabetic characters and spaces
-    if re.match(r'^[A-Za-z0-9\s]+$', prompt):
+    # Improved validation: Allow alphanumeric characters, spaces, and punctuation
+    if re.match(r'^[A-Za-z0-9\s\.,;!?(){}[\]]+$', prompt):
         return True
     return False
 
@@ -80,21 +91,25 @@ def generate_response(prompt: str) -> str:
     Returns:
         str: The generated response from the assistant.
     """
-    if "python" in prompt.lower():
-        # Use the Python model for code-related queries
-        inputs = mistral_tokenizer(prompt, return_tensors="pt")
-        outputs = mistral_model.generate(**inputs)
-        response = mistral_tokenizer.decode(outputs[0], skip_special_tokens=True)
-    elif "osint" in prompt.lower():
+    if code_llama_model and code_llama_tokenizer:
+        if "python" in prompt.lower():
+            # Use the Code Llama model for code-related queries
+            inputs = code_llama_tokenizer(prompt, return_tensors="pt")
+            outputs = code_llama_model.generate(**inputs, max_length=150, num_return_sequences=1)
+            response = code_llama_tokenizer.decode(outputs[0], skip_special_tokens=True)
+        else:
+            response = "I'm here to assist with your queries."
+    else:
+        response = "Model not loaded. Please try again later."
+
+    if "osint" in prompt.lower():
         # Respond with dataset-based OSINT information
         response = "OSINT data analysis coming soon!"
-    elif "wordlist" in prompt.lower():
-        # Fetch and display a sample entry from the Wordlist dataset
-        wordlist_entry = wordlist_dataset["train"][0]["text"]
-        response = f"Here's a sample wordlist entry: {wordlist_entry}"
-    else:
-        response = "I'm here to assist with your queries."
-    
+    elif "wordlist" in prompt.lower() and wordlist_dataset:
+        # Fetch and display a random entry from the Wordlist dataset
+        wordlist_entry = random.choice(wordlist_dataset["train"])["text"]
+        response = f"Here's a random wordlist entry: {wordlist_entry}"
+
     return response
 
 # User input handling
